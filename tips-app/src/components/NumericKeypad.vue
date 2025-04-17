@@ -1,6 +1,5 @@
 <template>
   <div class="numeric-keypad w-full max-w-xs mx-auto bg-gray-50 rounded-xl p-4 shadow-inner">
-    <!-- Display con botón de borrado -->{{ props.currentStep }} {{ disabledAction }}
     <div class="flex mb-4 h-16 border-b border-gray-400 items-center">
       <div class="flex-grow flex items-center justify-between px-4 text-3xl font-mono">
         <p>{{ typeLabel }}</p>
