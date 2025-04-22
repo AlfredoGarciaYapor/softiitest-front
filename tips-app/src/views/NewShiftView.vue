@@ -6,8 +6,8 @@
     <!-- Sección 2: División de propinas -->
     <div class="bg-white p-4 rounded-lg">
       <TipSplitter
-        :total-tips="tipsStore.currentShift?.totalTips || 0"
-        :total-people="tipsStore.currentShift?.splitCount || 1"
+        :total-tips="tipsStore.currentTip?.amount || 0"
+        :total-people="tipsStore.currentTip?.splitCount || 1"
       />
       <!-- <h2 class="text-lg font-semibold mb-3">¿Entre cuántos quieres dividir las Propinas?</h2>
       <div class="flex items-center gap-4 mb-4">
@@ -24,36 +24,40 @@
     <!-- Sección 1: Total de propinas -->
     <div class="bg-white p-4 rounded-lg">
       <h2 class="text-lg font-semibold mb-3">Total de Propinas</h2>
-      <div class="text-3xl font-bold">${{ totalTips }}</div>
-
-      <!-- NumericKeypad para ingresar el total -->
+      <div class="text-3xl font-bold">${{ formattedTotalTips }}</div>
+      {{ totalTipsInput }}
+      {{ splitCount }}
+      {{ paymentAmount }}
       <NumericKeypad
-        v-if="tipsStore.activeStep === 'amount'"
-        v-model="totalTips"
+        v-if="activeStep === 'amount'"
+        v-model="totalTipsInput"
         class="mt-4"
+        type-label="$"
+        action-label="Continuar"
         current-step="amount"
+        @action="handleAmountSubmit"
       />
+
       <NumericKeypad
-        v-if="tipsStore.activeStep === 'split'"
+        v-if="activeStep === 'split'"
         v-model="splitCount"
         type-label="#"
-        action-label="Agregar Pago"
+        action-label="Continuar"
         current-step="split"
-        class="flex-1"
+        class="mt-4"
+        @action="handleSplitSubmit"
       />
+
       <NumericKeypad
-        v-if="tipsStore.activeStep === 'payment'"
+        v-if="activeStep === 'payment'"
         v-model="paymentAmount"
+        type-label="$"
         action-label="Agregar Pago"
         current-step="payment"
         :payment-method="selectedPaymentMethod"
-        class="flex-1"
+        class="mt-4"
+        @action="handlePaymentSubmit"
       />
-
-      <!-- <div class="bg-white p-4 rounded-lg">
-        <h2 class="text-lg font-semibold mb-3">Pagar Propinas</h2>
-        <div class="flex flex-col sm:flex-row gap-4"></div>
-      </div> -->
     </div>
 
     <!-- Sección 5: Lista de pagos -->
@@ -96,66 +100,67 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useTipsStore } from '@/stores/tipsStore'
 import NumericKeypad from '@/components/NumericKeypad.vue'
 import PaymentMethod from '@/components/PaymentMethod.vue'
 import TipSplitter from '@/components/TipSplitter.vue'
+import type { PMethod } from '@/types'
 
 const tipsStore = useTipsStore()
-
-// Iniciar nuevo turno si no hay uno activo
-if (!tipsStore.currentShift) {
-  tipsStore.startNewShift()
-}
-
-const selectedPaymentMethod = ref(tipsStore.paymentMethods[0])
+const selectedPaymentMethod = ref<PMethod>('Efectivo')
 const paymentAmount = ref(0)
+const totalTipsInput = ref(0)
 
 // Computed properties
-const activeStep = computed(() => tipsStore.currentStep)
+const activeStep = computed(() => tipsStore.activeStep)
 const splitCount = computed({
-  get: () => tipsStore.currentShift?.splitCount || 1,
+  get: () => tipsStore.currentTip?.splitCount || 1,
   set: (value) => tipsStore.setSplitCount(value),
 })
-const payments = computed(() => tipsStore.currentShift?.payments || [])
-const totalPaid = computed(() => payments.value.reduce((sum, p) => sum + p.amount, 0))
-const remaining = computed(() => (tipsStore.currentShift?.totalTips || 0) - totalPaid.value)
+const payments = computed(() => tipsStore.currentTip?.payments || [])
+const formattedTotalTips = computed(() =>
+  tipsStore.totalTips.toLocaleString('es-MX', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }),
+)
 
-/**
- * Añade un pago al turno actual
- */
-// const addPayment = () => {
-//   // Validación adicional
-//   if (paymentAmount.value <= 0 || remaining.value <= 0) {
-//     return
-//   }
+// const splitCount = computed({
+//   get: () => tipsStore.currentTip?.splitCount || 1,
+//   set: (value) => tipsStore.setSplitCount(value),
+// })
+// const payments = computed(() => tipsStore.currentTip?.payments || [])
+// const formattedTotal = computed(() => tipsStore.totalTips.toLocaleString('es-MX', {
+//   minimumFractionDigits: 2,
+//   maximumFractionDigits: 2
+// }))
 
-//   // Solo permitir un pago a la vez
-//   if (
-//     tipsStore.currentShift?.payments.some(
-//       (p) =>
-//         p.amount === paymentAmount.value &&
-//         p.method === selectedPaymentMethod.value &&
-//         new Date().getTime() - p.timestamp.getTime() < 1000,
-//     )
-//   ) {
-//     return
-//   }
+onMounted(async () => {
+  if (!tipsStore.currentShift) {
+    await tipsStore.startNewShift()
+  }
+})
 
-//   tipsStore.addPayment(paymentAmount.value, selectedPaymentMethod.value)
+const handleAmountSubmit = async () => {
+  if (totalTipsInput.value > 0) {
+    await tipsStore.setTipAmount(totalTipsInput.value)
+    tipsStore.setActiveStep('split')
+  }
+}
 
-//   // Resetear después del pago
-//   paymentAmount.value = 0
-// }
+const handleSplitSubmit = () => {
+  tipsStore.setActiveStep('payment')
+}
 
-/**
- * Cierra el turno actual
- */
-const closeShift = () => {
-  if (remaining.value > 0) return
-  tipsStore.setActiveStep('close')
-  tipsStore.setActiveStep('amount')
-  tipsStore.closeCurrentShift()
+const handlePaymentSubmit = async () => {
+  if (paymentAmount.value > 0) {
+    await tipsStore.addPayment(paymentAmount.value, selectedPaymentMethod.value)
+    paymentAmount.value = 0
+  }
+}
+
+const closeShift = async () => {
+  await tipsStore.closeShift()
 }
 </script>

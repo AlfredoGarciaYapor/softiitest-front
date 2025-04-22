@@ -13,7 +13,6 @@
       </button>
     </div>
 
-    <!-- Teclado numérico -->
     <div class="grid grid-cols-3 gap-3">
       <button
         v-for="btn in buttonConfig"
@@ -25,7 +24,7 @@
           'opacity-50 cursor-not-allowed': btn.value === 'action' && disabledAction,
         }"
       >
-        {{ btn.value === 'action' ? '✔' : btn.value }}
+        {{ btn.value === 'action' ? actionLabel : btn.value }}
       </button>
     </div>
   </div>
@@ -33,8 +32,6 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import type { ActiveStep } from '@/types'
-import { useTipsStore } from '@/stores/tipsStore'
 
 interface ButtonConfig {
   value: string
@@ -47,7 +44,7 @@ interface Props {
   typeLabel?: string
   actionButtonClass?: string
   disabledAction?: boolean
-  currentStep?: ActiveStep
+  currentStep?: string
   paymentMethod?: string
 }
 
@@ -55,8 +52,6 @@ interface Emits {
   (e: 'update:modelValue', value: number): void
   (e: 'action'): void
 }
-
-const tipsStore = useTipsStore()
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: 0,
@@ -69,25 +64,17 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>()
 
-const buttonConfig: ButtonConfig[] = [
-  '7',
-  '8',
-  '9',
-  '4',
-  '5',
-  '6',
-  '1',
-  '2',
-  '3',
-  '00',
-  '0',
-  'action',
-].map((value) => ({
-  value,
-  label: value === 'action' ? props.actionLabel : value,
-}))
-
 const inputValue = ref(props.modelValue.toString())
+
+const buttonConfig: ButtonConfig[] = [
+  '7', '8', '9',
+  '4', '5', '6',
+  '1', '2', '3',
+  '00', '0', 'action'
+].map(value => ({
+  value,
+  label: value === 'action' ? props.actionLabel : value
+}))
 
 const formattedDisplay = computed(() => {
   const num = parseFloat(inputValue.value) || 0
@@ -97,16 +84,12 @@ const formattedDisplay = computed(() => {
   })
 })
 
-/**
- * Maneja el evento de pulsación de botón
- * @param value - Valor del botón pulsado
- */
 const handleButtonPress = (value: string) => {
   if (value === 'action') {
     if (!props.disabledAction) {
       emit('action')
-      handleActionStep()
     }
+    updateModelValue()
     return
   }
 
@@ -118,50 +101,18 @@ const handleButtonPress = (value: string) => {
     inputValue.value = inputValue.value === '0' ? value : inputValue.value + value
   }
 
-  updateModelValue()
 }
 
-/**
- * Maneja la lógica de acción según el paso actual
- */
-const handleActionStep = () => {
-  const numericValue = parseFloat(inputValue.value) || 0
-
-  switch (props.currentStep) {
-    case 'amount':
-      tipsStore.setTotalTips(numericValue)
-      tipsStore.setActiveStep('split')
-      break
-    case 'split':
-      tipsStore.setSplitCount(numericValue)
-      tipsStore.setActiveStep('payment')
-      break
-    case 'payment':
-      console.log('add payment')
-      tipsStore.addPayment(numericValue, props.paymentMethod || 'Efectivo')
-      break
-  }
-}
-
-/**
- * Maneja el borrado de dígitos
- */
 const handleBackspace = () => {
   inputValue.value = inputValue.value.length > 1 ? inputValue.value.slice(0, -1) : '0'
   updateModelValue()
 }
 
-/**
- * Actualiza el valor del modelo
- */
 const updateModelValue = () => {
   const numValue = parseFloat(inputValue.value) || 0
   emit('update:modelValue', numValue)
 }
 
-/**
- * Sincroniza con cambios externos
- */
 watch(
   () => props.modelValue,
   (newVal) => {
@@ -169,6 +120,6 @@ watch(
     if (newValueStr !== inputValue.value) {
       inputValue.value = newValueStr
     }
-  },
+  }
 )
 </script>

@@ -33,54 +33,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
-import type { PaymentMethod } from '@/types'
+import { ref, watch } from 'vue'
+import type { PMethod } from '@/types'
 
 interface Props {
-  /**
-   * Monto a pagar
-   */
   amount: number
-
-  /**
-   * Métodos de pago disponibles
-   * @default ['Efectivo', 'BBVA 1234', 'Santander 1234']
-   */
-  paymentMethods?: PaymentMethod[]
-}
-
-interface Emits {
-  /**
-   * Evento emitido cuando se cambia el método seleccionado
-   * @param value - Nuevo método de pago seleccionado
-   */
-  (e: 'update:modelValue', value: PaymentMethod): void
+  paymentMethods?: PMethod[]
+  modelValue?: PMethod
 }
 
 const props = withDefaults(defineProps<Props>(), {
   paymentMethods: () => ['Efectivo', 'BBVA 1234', 'Santander 1234'],
+  modelValue: 'Efectivo'
 })
 
-const emit = defineEmits<Emits>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: PMethod): void
+}>()
 
-// Método de pago seleccionado
-const selectedMethod = ref<PaymentMethod>(props.paymentMethods[0])
+const selectedMethod = ref<PMethod>(props.modelValue)
 
-// Formatea el monto para mostrar
-const formattedAmount = computed(() => {
-  return props.amount.toLocaleString('es-MX', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
+// Watchers para sincronización bidireccional
+watch(selectedMethod, (newVal) => {
+  emit('update:modelValue', newVal)
 })
 
-// Emite el cambio cuando se selecciona un nuevo método
-watch(selectedMethod, (newMethod) => {
-  emit('update:modelValue', newMethod)
-})
-
-// Expone el método seleccionado al componente padre
-defineExpose({
-  selectedMethod,
+watch(() => props.modelValue, (newVal) => {
+  selectedMethod.value = newVal
 })
 </script>

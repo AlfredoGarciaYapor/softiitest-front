@@ -18,17 +18,24 @@ export interface Payment {
   timestamp: Date
 }
 
+export interface Tip {
+  id: string
+  amount: number
+  splitCount: number
+  payments: Payment[]
+  timestamp: Date
+}
+
 export interface Shift {
   id: string
   startTime: Date
   endTime?: Date
-  splitCount: number
   totalTips: number
-  payments: Payment[]
+  tips: Tip[] // Add the 'tips' property
   isClosed: boolean
 }
 
 /**
  * Tipos de utilidad
  */
-export type PaymentMethod = 'Efectivo' | 'BBVA 1234' | 'Santander 1234' | string
+export type PMethod = 'Efectivo' | 'BBVA 1234' | 'Santander 1234' | string

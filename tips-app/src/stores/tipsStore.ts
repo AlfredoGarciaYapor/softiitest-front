@@ -1,159 +1,161 @@
 import { defineStore } from 'pinia'
-import type { Employee, Payment, Shift, ActiveStep, PaymentMethod } from '@/types'
+import tipsApi from '@/api/tipsApi'
+import { ref, computed } from 'vue'
+import type { Shift, Tip, Payment, PMethod, ActiveStep } from '@/types'
 
-interface TipsState {
-  activeStep: ActiveStep
-  currentShift: Shift | null
-  shifts: Shift[]
-  employees: Employee[]
-  paymentMethods: PaymentMethod[]
-}
+export const useTipsStore = defineStore('tips', () => {
+  // Estado
+  const currentShift = ref<Shift | null>(null)
+  const currentTip = ref<Tip | null>(null)
+  const activeStep = ref<ActiveStep>('amount')
+  const loading = ref(false)
+  const error = ref<string | null>(null)
 
-/**
- * Store para la gestión de propinas y turnos
- */
-export const useTipsStore = defineStore('tips', {
-  state: (): TipsState => ({
-    activeStep: 'amount',
-    currentShift: null,
-    shifts: [],
-    employees: [
-      { id: '1', name: 'Mesero 1', role: 'waitress' },
-      { id: '2', name: 'Mesero 2', role: 'waitress' },
-      { id: '3', name: 'Cocinero', role: 'chef' },
-    ],
-    paymentMethods: ['Efectivo', 'BBVA 1234', 'Santander 1234'],
-  }),
+  // Getters
+  const paymentMethods = computed<PMethod[]>(() => ['Efectivo', 'BBVA 1234', 'Santander 1234'])
+  const totalTips = computed(() => currentTip.value?.amount || 0)
+  const totalPaid = computed(() => 
+    currentTip.value?.payments?.reduce((sum, p) => sum + p.amount, 0) || 0
+  )
+  const remaining = computed(() => Math.max(0, totalTips.value - totalPaid.value))
+  const canCloseShift = computed(() => 
+    remaining.value <= 0 && 
+    activeStep.value === 'payment' && 
+    !loading.value &&
+    currentShift.value !== null
+  )
 
-  actions: {
-    /**
-     * Inicia un nuevo turno
-     */
-    startNewShift(): void {
-      const newShift: Shift = {
-        id: Date.now().toString(),
-        startTime: new Date(),
-        totalTips: 0,
-        splitCount: 1,
-        payments: [],
-        isClosed: false,
-      }
-      this.currentShift = newShift
-      this.shifts.unshift(newShift)
-    },
+  // Acciones
+  const setTipAmount = (amount: Tip['amount']): void => {
+    if (currentTip.value) {
+      currentTip.value.amount = amount
+    } else {
+      throw new Error('No hay propina activa')
+    }
+  }
+  const startNewShift = async (): Promise<void> => {
+    try {
+      loading.value = true
+      currentShift.value = await tipsApi.createShift()
+      currentTip.value = null
+      activeStep.value = 'amount'
+      error.value = null
+    } catch (err) {
+      error.value = 'Error al iniciar turno'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
 
-    /**
-     * Establece el total de propinas para el turno actual
-     * @param amount - Cantidad de propinas
-     */
-    setTotalTips(amount: number): void {
-      if (!this.currentShift) return
-      this.currentShift.totalTips = amount
-    },
-
-    /**
-     * Establece el número de divisiones para las propinas
-     * @param count - Número de divisiones (mínimo 1)
-     */
-    setSplitCount(count: number): void {
-      if (!this.currentShift) return
-      this.currentShift.splitCount = Math.max(1, count)
-    },
-
-    /**
-     * Cambia el paso activo del flujo
-     * @param step - Paso al que cambiar
-     */
-    setActiveStep(step: ActiveStep): void {
-      this.activeStep = step
-    },
-
-    /**
-     * Añade un pago al turno actual
-     * @param amount - Cantidad del pago
-     * @param method - Método de pago
-     * @param employeeId - ID del empleado (opcional)
-     */
-    addPayment(amount: number, method: string, employeeId?: string): void {
-      if (!this.currentShift) return
-
-      const payment: Payment = {
-        id: Date.now().toString(),
+  const createTip = async (amount: number, splitCount: number): Promise<void> => {
+    if (!currentShift.value) throw new Error('No hay turno activo')
+      console.log(currentShift.value)
+    
+    try {
+      loading.value = true
+      const newTip = await tipsApi.addTip(
+        currentShift.value.id,
         amount,
-        method,
-        employeeId,
-        timestamp: new Date(),
+        splitCount
+      )
+      currentTip.value = newTip
+      
+      // Agregar la propina al turno actual
+      if (currentShift.value.tips) {
+        currentShift.value.tips.push(newTip)
+      } else {
+        currentShift.value.tips = [newTip]
       }
+      
+      currentShift.value.totalTips = amount
+      activeStep.value = 'split'
+      error.value = null
+    } catch (err) {
+      error.value = 'Error al crear propina'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
 
-      this.currentShift.payments.push(payment)
-    },
+  const addPayment = async (amount: number, method: PMethod): Promise<void> => {
+    if (!currentTip.value || !currentShift.value) {
+      throw new Error('No hay propina o turno activo')
+    }
+    
+    try {
+      loading.value = true
+      const payment = await tipsApi.addPayment(
+        currentTip.value.id,
+        amount,
+        method
+      )
+      
+      // Actualizar pagos en la propina actual
+      currentTip.value.payments.push(payment)
+      
+      // Actualizar en el turno
+      const tipInShift = currentShift.value.tips.find(t => t.id === currentTip.value?.id)
+      if (tipInShift) {
+        tipInShift.payments.push(payment)
+      }
+      
+      error.value = null
+    } catch (err) {
+      error.value = 'Error al agregar pago'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
 
-    /**
-     * Cierra el turno actual
-     */
-    closeCurrentShift(): void {
-      if (!this.currentShift) return
-      this.currentShift.endTime = new Date()
-      this.currentShift.isClosed = true
-      this.currentShift = null
-      this.activeStep = 'amount'
-    },
+  const closeShift = async (): Promise<void> => {
+    if (!currentShift.value || !canCloseShift.value) return
+    
+    try {
+      loading.value = true
+      currentShift.value = await tipsApi.closeShift(currentShift.value.id)
+      if (currentShift.value) {
+        currentShift.value.isClosed = true
+        currentShift.value.endTime = new Date()
+      }
+      activeStep.value = 'closed'
+      error.value = null
+    } catch (err) {
+      error.value = 'Error al cerrar turno'
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
 
-    /**
-     * Obtiene un turno por su ID
-     * @param id - ID del turno
-     * @returns El turno encontrado o undefined
-     */
-    getShiftById(id: string): Shift | undefined {
-      return this.shifts.find((shift) => shift.id === id)
-    },
-  },
-
-  getters: {
-    /**
-     * @returns Total pagado en el turno actual
-     */
-    currentShiftTotalPaid(): number {
-      if (!this.currentShift) return 0
-      return this.currentShift.payments.reduce((sum, p) => sum + p.amount, 0)
-    },
-
-    /**
-     * @returns Paso actual del flujo
-     */
-    currentStep(): ActiveStep {
-      return this.activeStep
-    },
-
-    /**
-     * @returns Número de divisiones actual
-     */
-    currentSplitCount(): number {
-      if (!this.currentShift) return 0
-      return this.currentShift.splitCount
-    },
-
-    /**
-     * @returns Total de propinas en el turno actual
-     */
-    currentTotalTips(): number {
-      if (!this.currentShift) return 0
-      return this.currentShift.totalTips
-    },
-
-    /**
-     * @returns Cantidad restante por pagar en el turno actual
-     */
-    currentShiftRemaining(): number {
-      if (!this.currentShift) return 0
-      return this.currentShift.totalTips - this.currentShiftTotalPaid
-    },
-
-    /**
-     * @returns Turnos cerrados filtrados
-     */
-    filteredShifts(): Shift[] {
-      return this.shifts.filter((shift) => shift.isClosed)
-    },
-  },
+  return {
+    // Estado
+    currentShift,
+    currentTip,
+    activeStep,
+    loading,
+    error,
+    
+    // Getters
+    paymentMethods,
+    totalTips,
+    totalPaid,
+    remaining,
+    canCloseShift,
+    
+    // Acciones
+    setTipAmount,
+    startNewShift,
+    createTip,
+    addPayment,
+    closeShift,
+    setActiveStep: (step: ActiveStep) => { activeStep.value = step },
+    setSplitCount: (count: number) => {
+      if (currentTip.value) {
+        currentTip.value.splitCount = count
+      }
+    }
+  }
 })
